@@ -1,5 +1,5 @@
 ---
-import links from 'public/links.json'
+import { linksData } from '@/data/links'
 
 import { Collapse, Timeline } from 'astro-pure/user'
 import config from 'virtual:config'
@@ -12,7 +12,7 @@ const headings = [
   { depth: 2, slug: 'apply-links', text: 'Apply Links' }
 ]
 
-const { friends } = links
+const { friends } = linksData
 const linksConf = config.integ.links
 const linkEditPage = 'https://github.com/cworld1/astro-theme-pure/blob/main/public/links.json'
 ---
