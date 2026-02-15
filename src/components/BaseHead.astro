@@ -29,9 +29,11 @@ const socialImageURL = new URL(ogImage ? ogImage : config.socialCard, Astro.url)
 
 {/* Font preloads */}
 <Font cssVariable='--font-satoshi' preload={[{ subset: 'latin', style: 'normal' }]} />
+<Font cssVariable='--font-noto-sans-sc' />
+<Font cssVariable='--font-jetbrains-mono' />
 <style>
   body {
-    font-family: var(--font-satoshi);
+    font-family: var(--font-satoshi), var(--font-noto-sans-sc), sans-serif;
   }
 </style>
 

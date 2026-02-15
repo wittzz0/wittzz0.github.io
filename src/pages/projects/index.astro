@@ -19,11 +19,11 @@ const headings = [
 ]
 ---
 
-<PageLayout title='Projects' {headings} view>
+<PageLayout title='Projects' {headings}>
   {/* About astro-pure */}
   <div class='not-prose flex justify-center'>
     <a
-      href='/docs/advanced/about' target='_blank'
+      href='https://astro-pure.js.org/docs/advanced/about' target='_blank'
       class='flex items-center gap-x-3 rounded-full border bg-background px-4 py-2 text-sm shadow-sm transition-shadow hover:shadow-md'
     >
       <span class='size-2 rounded-full bg-green-400'></span>
@@ -154,7 +154,7 @@ const headings = [
     ]}
   />
   <p>Global methods: <a href="https://ko-fi.com/cworld0" target="_blank">Ko-fi</a> </p>
-  <p>Please leave a message or contact me proactively after sponsorship. My email is:
+  <p>Please contact me proactively after sponsorship. My email is:
     <code style='cursor: pointer'
       onclick='const m=atob(this.textContent);alert(m);window.open(`mailto:${m}`,"_blank")'
     >Y3dvcmxkMEBxcS5jb20=</code>

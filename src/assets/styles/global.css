@@ -118,6 +118,14 @@ span.katex-display {
   }
 }
 
+.astro-code pre,
+.astro-code pre code,
+pre code {
+  font-family:
+    var(--font-jetbrains-mono), ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas,
+    'Liberation Mono', monospace;
+}
+
 /* [Shiki transformer] */
 .astro-code {
   /* Title */

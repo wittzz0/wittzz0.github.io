@@ -126,6 +126,22 @@ export default defineConfig({
         styles: ['normal', 'italic'],
         weights: [400, 500],
         subsets: ['latin']
+      },
+      {
+        provider: fontProviders.fontsource(),
+        name: 'Noto Sans SC',
+        cssVariable: '--font-noto-sans-sc',
+        styles: ['normal'],
+        weights: [400, 500],
+        subsets: ['chinese-simplified', 'latin']
+      },
+      {
+        provider: fontProviders.fontsource(),
+        name: 'JetBrains Mono',
+        cssVariable: '--font-jetbrains-mono',
+        styles: ['normal'],
+        weights: [400, 500],
+        subsets: ['latin']
       }
     ]
   }

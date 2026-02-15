@@ -3,11 +3,11 @@ import type { CardListData, Config, IntegrationUserConfig, ThemeUserConfig } fro
 export const theme: ThemeUserConfig = {
   // [Basic]
   /** Title for your website. Will be used in metadata and as browser tab title. */
-  title: 'Astro Theme Pure',
+  title: 'Witt\'s Blog',
   /** Will be used in index page & copyright declaration */
-  author: 'Pure Lab',
+  author: 'Witt',
   /** Description metadata for your website. Can be used in page metadata. */
-  description: 'Stay hungry, stay foolish',
+  description: 'Lorem ipsum',
   /** The default favicon for your site which should be a path to an image in the `public/` directory. */
   favicon: '/favicon/favicon.ico',
   /** The default social card image for your site which should be a path to an image in the `public/` directory. */
@@ -26,7 +26,7 @@ export const theme: ThemeUserConfig = {
   },
   /** Set a logo image to show in the homepage. */
   logo: {
-    src: '/src/assets/avatar.png',
+    src: '/src/assets/aimg.jpg',
     alt: 'Avatar'
   },
 
@@ -49,7 +49,6 @@ export const theme: ThemeUserConfig = {
   header: {
     menu: [
       { title: 'Blog', link: '/blog' },
-      { title: 'Docs', link: '/docs' },
       { title: 'Projects', link: '/projects' },
       { title: 'Links', link: '/links' },
       { title: 'About', link: '/about' }
@@ -62,18 +61,7 @@ export const theme: ThemeUserConfig = {
     year: `© ${new Date().getFullYear()}`,
     // year: `© 2019 - ${new Date().getFullYear()}`,
     links: [
-      // Registration link
-      {
-        title: 'Moe ICP 114514',
-        link: 'https://icp.gov.moe/?keyword=114514',
-        style: 'text-sm' // Uno/TW CSS class
-      },
-      // Privacy Policy link
-      {
-        title: 'Site Policy',
-        link: '/terms',
-        pos: 2 // position set to 2 will be appended to copyright line
-      }
+
     ],
     /** Enable displaying a “Astro & Pure theme powered” link in your site’s footer. */
     credits: true,
@@ -101,14 +89,11 @@ export const theme: ThemeUserConfig = {
 export const integ: IntegrationUserConfig = {
   // [Links]
   // https://astro-pure.js.org/docs/integrations/links
+
   links: {
     // Friend logbook
     logbook: [
-      { date: '2025-03-16', content: 'Is there a leakage?' },
-      { date: '2025-03-16', content: 'A leakage of what?' },
-      { date: '2025-03-16', content: 'I have a full seat of water, like, full of water!' },
-      { date: '2025-03-16', content: 'Must be the water.' },
-      { date: '2025-03-16', content: "Let's add that to the words of wisdom." }
+      
     ],
     // Yourself link info
     applyTip: [
@@ -159,7 +144,7 @@ export const integ: IntegrationUserConfig = {
   },
   // Comment system
   waline: {
-    enable: true,
+    enable: false,
     // Server service link
     server: 'https://astro-theme-pure-waline.arthals.ink/',
     // Show meta info for comments
