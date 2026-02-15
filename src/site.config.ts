@@ -91,10 +91,8 @@ export const integ: IntegrationUserConfig = {
   // https://astro-pure.js.org/docs/integrations/links
 
   links: {
-    // Friend logbook
-    logbook: [
-      
-    ],
+    // Required by schema, not used in page rendering.
+    logbook: [],
     // Yourself link info
     applyTip: [
       { name: 'Name', val: theme.title },
