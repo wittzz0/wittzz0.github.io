@@ -1,0 +1,57 @@
+---
+import { Icon } from 'astro-pure/user'
+
+interface Props {
+  daysOnline: number
+  lastUpdatedText: string
+  totalWordsText: string
+  totalPosts: number
+}
+
+const { daysOnline, lastUpdatedText, totalWordsText, totalPosts } = Astro.props
+---
+
+<div class='flex flex-col gap-y-5'>
+  <div class='grid grid-cols-1 gap-4 sm:grid-cols-3'>
+    <div class='group flex flex-col items-center gap-2 rounded-lg border border-border bg-background p-4 shadow-sm transition-all hover:border-foreground/25 hover:shadow-lg'>
+      <Icon name='time' class='size-5 text-muted-foreground transition-colors group-hover:text-primary' />
+      <div class='text-center'>
+        <div class='flex h-8 items-center justify-center text-2xl font-bold text-foreground transition-colors group-hover:text-primary'>
+          {daysOnline}
+        </div>
+        <div class='text-sm text-muted-foreground'>Days Online</div>
+      </div>
+    </div>
+
+    <div class='group flex flex-col items-center gap-2 rounded-lg border border-border bg-background p-4 shadow-sm transition-all hover:border-foreground/25 hover:shadow-lg'>
+      <Icon
+        name='calendar'
+        class='size-5 text-muted-foreground transition-colors group-hover:text-primary'
+      />
+      <div class='text-center'>
+        <div class='flex h-8 items-center justify-center text-sm font-medium text-foreground transition-colors group-hover:text-primary'>
+          {lastUpdatedText}
+        </div>
+        <div class='text-sm text-muted-foreground'>Last Updated</div>
+      </div>
+    </div>
+
+    <div class='group flex flex-col items-center gap-2 rounded-lg border border-border bg-background p-4 shadow-sm transition-all hover:border-foreground/25 hover:shadow-lg'>
+      <Icon
+        name='document'
+        class='size-5 text-muted-foreground transition-colors group-hover:text-primary'
+      />
+      <div class='text-center'>
+        <div class='flex h-8 items-center justify-center text-2xl font-bold text-foreground transition-colors group-hover:text-primary'>
+          {totalWordsText}
+        </div>
+        <div class='text-sm text-muted-foreground'>Total Words</div>
+      </div>
+    </div>
+  </div>
+
+  <div class='flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-sm shadow-sm'>
+    <span class='text-muted-foreground'>Total Posts</span>
+    <span class='font-medium text-foreground'>{totalPosts}</span>
+  </div>
+</div>

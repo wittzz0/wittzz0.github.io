@@ -1,0 +1,193 @@
+---
+import { heatmapCellGap, heatmapCellSize } from '@/data/home-statistics'
+
+interface ContributionRecord {
+  date: string
+  count: number
+}
+
+interface HeatmapCell {
+  date: string
+  count: number
+  level: number
+  x: number
+  y: number
+}
+
+interface Props {
+  records: ContributionRecord[]
+  windowDays?: number
+}
+
+const { records = [], windowDays = 365 } = Astro.props as Props
+
+const step = heatmapCellSize + heatmapCellGap
+const topPadding = 22
+
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const toStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+const getLevel = (count: number, maxCount: number) => {
+  if (count <= 0) return 0
+  if (maxCount <= 1) return 1
+  return Math.min(4, Math.max(1, Math.ceil((count / maxCount) * 4)))
+}
+
+const totalDays = Math.max(1, windowDays)
+const endDate = toStartOfDay(new Date())
+const startDate = new Date(endDate)
+startDate.setDate(startDate.getDate() - (totalDays - 1))
+
+const countByDate = new Map<string, number>(
+  records
+    .filter((record) => Number.isFinite(record.count))
+    .map((record) => [record.date, Math.max(0, Math.floor(record.count))])
+)
+
+const startWeekday = startDate.getDay()
+const totalWeeks = Math.floor((totalDays + startWeekday - 1) / 7) + 1
+
+const monthLabels: { x: number; text: string }[] = []
+const monthLabelColumns = new Set<number>()
+const rawCells: Array<Omit<HeatmapCell, 'level'>> = []
+let maxCount = 0
+
+for (let i = 0; i < totalDays; i++) {
+  const date = new Date(startDate)
+  date.setDate(startDate.getDate() + i)
+  const dateKey = toDateKey(date)
+  const count = countByDate.get(dateKey) ?? 0
+  const weekIndex = Math.floor((i + startWeekday) / 7)
+  const dayOfWeek = date.getDay()
+
+  maxCount = Math.max(maxCount, count)
+  rawCells.push({
+    date: dateKey,
+    count,
+    x: weekIndex * step,
+    y: topPadding + dayOfWeek * step
+  })
+
+  if ((i === 0 || date.getDate() === 1) && !monthLabelColumns.has(weekIndex)) {
+    monthLabelColumns.add(weekIndex)
+    monthLabels.push({
+      x: weekIndex * step,
+      text: date.toLocaleString('en-US', { month: 'short' })
+    })
+  }
+}
+
+const cells: HeatmapCell[] = rawCells.map((cell) => ({
+  ...cell,
+  level: getLevel(cell.count, maxCount)
+}))
+
+const totalContributions = cells.reduce((sum, cell) => sum + cell.count, 0)
+const contributionUnit = totalContributions === 1 ? 'contribution' : 'contributions'
+const yearRange =
+  startDate.getFullYear() === endDate.getFullYear()
+    ? `${startDate.getFullYear()}`
+    : `${startDate.getFullYear()} ~ ${endDate.getFullYear()}`
+const summaryText = `${totalContributions} ${contributionUnit} in ${yearRange}`
+
+const svgWidth = totalWeeks * step - heatmapCellGap
+const svgHeight = topPadding + 7 * step - heatmapCellGap
+---
+
+<section class='flex flex-col gap-y-3'>
+  <div class='w-full overflow-x-auto' style='max-width: 90vw;'>
+    <svg class='block' width={svgWidth} height={svgHeight} viewBox={`0 0 ${svgWidth} ${svgHeight}`}>
+      <g>
+        {
+          monthLabels.map((label) => (
+            <text x={label.x} y='0' dominant-baseline='hanging' fill='currentColor' style='font-size: 12px;'>
+              {label.text}
+            </text>
+          ))
+        }
+      </g>
+
+      {
+        cells.map((cell) => (
+          <rect
+            class={`heatmap-cell level-${cell.level}`}
+            x={cell.x}
+            y={cell.y}
+            width={heatmapCellSize}
+            height={heatmapCellSize}
+            rx='2'
+            ry='2'
+            data-date={cell.date}
+            data-level={cell.level}
+          >
+            <title>{`${cell.count} contributions on ${cell.date}`}</title>
+          </rect>
+        ))
+      }
+    </svg>
+  </div>
+
+  <footer class='flex items-center justify-between text-sm max-sm:flex-col max-sm:items-start max-sm:gap-2'>
+    <div>{summaryText}</div>
+    <div class='flex items-center gap-1'>
+      <span>Less</span>
+      {
+        [0, 1, 2, 3, 4].map((level) => (
+          <svg width='12' height='12' aria-hidden='true'>
+            <rect width='12' height='12' rx='2' ry='2' class={`heatmap-cell level-${level}`}></rect>
+          </svg>
+        ))
+      }
+      <span>More</span>
+    </div>
+  </footer>
+</section>
+
+<style>
+  .heatmap-cell {
+    stroke: hsl(var(--foreground) / 0.1);
+    transition: opacity 0.2s ease;
+  }
+
+  .heatmap-cell:hover {
+    opacity: 0.8;
+  }
+
+  .level-0 {
+    fill: #ebedf0;
+  }
+  .level-1 {
+    fill: #c6e48b;
+  }
+  .level-2 {
+    fill: #7bc96f;
+  }
+  .level-3 {
+    fill: #239a3b;
+  }
+  .level-4 {
+    fill: #196127;
+  }
+
+  :global(html.dark) .level-0 {
+    fill: #161b22;
+  }
+  :global(html.dark) .level-1 {
+    fill: #0e4429;
+  }
+  :global(html.dark) .level-2 {
+    fill: #006d32;
+  }
+  :global(html.dark) .level-3 {
+    fill: #26a641;
+  }
+  :global(html.dark) .level-4 {
+    fill: #39d353;
+  }
+</style>

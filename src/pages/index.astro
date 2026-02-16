@@ -1,22 +1,101 @@
 ---
+import type { ImageMetadata } from 'astro'
+import { render } from 'astro:content'
 import { Image } from 'astro:assets'
 
 import { PostPreview } from 'astro-pure/components/pages'
 import { getBlogCollection, sortMDByDate } from 'astro-pure/server'
+import { getFormattedDate } from 'astro-pure/utils'
 import { Button, Card, Icon, Label } from 'astro-pure/user'
+import ContributionHeatmap from '@/components/home/ContributionHeatmap.astro'
+import StatisticsSection from '@/components/home/StatisticsSection.astro'
 import PageLayout from '@/layouts/BaseLayout.astro'
-import ProjectCard from '@/components/home/ProjectCard.astro'
 import Section from '@/components/home/Section.astro'
-import SkillLayout from '@/components/home/SkillLayout.astro'
+import { heatmapWindowDays, onlineSince } from '@/data/home-statistics'
 import config from '@/site-config'
 
-const languages = ['Html', 'JavaScript', 'CSS', 'Shell']
-const frontend = ['TypeScript', 'Vite', 'Webpack', 'Astro']
-const backend = ['Vercel', 'Waline']
-
+const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_POSTS = 10
+
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const toStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+const formatTotalWords = (words: number) => {
+  if (words >= 10000) {
+    const short = (words / 10000).toFixed(1).replace(/\.0$/, '')
+    return `${short}w`
+  }
+  return words.toLocaleString('en-US')
+}
+
 const allPosts = await getBlogCollection()
-const allPostsByDate = sortMDByDate(allPosts).slice(0, MAX_POSTS)
+const posts = allPosts.filter((post) => !post.data.draft)
+const allPostsByDate = sortMDByDate([...posts]).slice(0, MAX_POSTS)
+
+const totalPosts = posts.length
+
+const postWordCounts = await Promise.all(
+  posts.map(async (post) => {
+    const { remarkPluginFrontmatter } = await render(post)
+    const words = Number(remarkPluginFrontmatter.words ?? 0)
+    return Number.isFinite(words) ? words : 0
+  })
+)
+const totalWords = postWordCounts.reduce((sum, words) => sum + words, 0)
+const totalWordsText = formatTotalWords(totalWords)
+
+const latestDateMs = posts.reduce((latest, post) => {
+  const postDate = new Date(post.data.updatedDate ?? post.data.publishDate)
+  const value = postDate.valueOf()
+  if (Number.isNaN(value)) return latest
+  return Math.max(latest, value)
+}, -Infinity)
+
+const lastUpdatedText =
+  latestDateMs === -Infinity
+    ? '--'
+    : getFormattedDate(new Date(latestDateMs), { month: 'short', day: 'numeric', year: 'numeric' })
+
+const onlineSinceDate = new Date(`${onlineSince}T00:00:00`)
+const today = toStartOfDay(new Date())
+const daysOnline = Number.isNaN(onlineSinceDate.valueOf())
+  ? 0
+  : Math.max(
+      0,
+      Math.floor((today.valueOf() - toStartOfDay(onlineSinceDate).valueOf()) / DAY_MS)
+    )
+
+const contributionMap = new Map<string, number>()
+
+for (const post of posts) {
+  const uniqueDates = new Set<string>()
+  const publishDate = new Date(post.data.publishDate)
+
+  if (!Number.isNaN(publishDate.valueOf())) {
+    uniqueDates.add(toDateKey(publishDate))
+  }
+
+  if (post.data.updatedDate) {
+    const updatedDate = new Date(post.data.updatedDate)
+    if (!Number.isNaN(updatedDate.valueOf())) {
+      uniqueDates.add(toDateKey(updatedDate))
+    }
+  }
+
+  for (const date of uniqueDates) {
+    contributionMap.set(date, (contributionMap.get(date) ?? 0) + 1)
+  }
+}
+
+const contributionRecords = [...contributionMap.entries()]
+  .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+  .map(([date, count]) => ({ date, count }))
 
 const imagePath = config.logo.src
 const images = import.meta.glob<{ default: ImageMetadata }>(
@@ -113,6 +192,7 @@ if (!images[imagePath])
       <Section title='Education'>
         <Card
           as='a'
+          class='!bg-background'
           heading='北京航空航天大学'
           subheading=''
           date='August 2025 - '
@@ -130,9 +210,16 @@ if (!images[imagePath])
         </Card>
       </Section>
 
-
-      <Section title='Skills'>
+      <Section title='Statistics'>
+        <StatisticsSection
+          daysOnline={daysOnline}
+          lastUpdatedText={lastUpdatedText}
+          totalWordsText={totalWordsText}
+          totalPosts={totalPosts}
+        />
       </Section>
+
+      <ContributionHeatmap records={contributionRecords} windowDays={heatmapWindowDays} />
     </div>
   </main>
 </PageLayout>
