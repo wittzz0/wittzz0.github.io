@@ -104,3 +104,52 @@ export const projectsPageData = {
 - 图标不显示：检查 `links.type` 是否为 `github/site/doc/release` 之一。
 - 页面没更新：确认你改的是 `src/data/*.ts`，不是旧的内嵌数组。
 - Links JSON 不一致：执行 `bun run sync:links` 或直接 `bun run build`。
+
+## 7. Edit Sponsorship by TS
+
+Sponsorship content on `Projects` is now also data-driven.
+
+Edit `src/data/projects.ts` in `projectsPageData.sponsorship`:
+
+```ts
+sponsorship: {
+  title: 'Sponsorship',
+  actions: [
+    {
+      key: 'buy-me-a-coffee',
+      label: 'Buy Me a Coffee',
+      icon: 'receive-money',
+      type: 'link',
+      href: 'https://ko-fi.com/cworld0',
+      target: '_blank'
+    },
+    {
+      key: 'wechat-pay',
+      label: 'WeChat',
+      icon: 'wechat-pay',
+      type: 'hover-qrcode',
+      qrImage: wechatQRCode,
+      qrAlt: 'WeChat Pay QR Code'
+    }
+  ],
+  contact: {
+    introText: 'Please contact me proactively after sponsorship. My email is',
+    email: 'cworld0@qq.com',
+    suffixText: '.'
+  },
+  thanks: {
+    title: 'Thanks to the following sponsors:',
+    progressMax: 50,
+    items: [
+      { name: 'Juyao Huang', amount: 5, date: '2026-01-15' }
+    ]
+  }
+}
+```
+
+- Change Buy Me a Coffee link: update `href` on the `link` action.
+- Change WeChat QR image: import another image and replace `qrImage`.
+- Change sponsorship email text/link: update `contact.introText` / `contact.email` / `contact.suffixText`.
+- Edit sponsor thanks list: update `thanks.items` (`name`, `date`, `amount`).
+- Sponsor platform is no longer displayed in the thanks list.
+- The page template no longer needs hardcoded payment text, email, or sponsor list.
