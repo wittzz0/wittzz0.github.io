@@ -71,7 +71,7 @@ export interface ProjectsPageData {
 
 export const projectsPageData: ProjectsPageData = {
   programs: [
-    {
+    /*{
       name: '💄 PKU Art',
       description: 'A script to beautify pku course website',
       links: [
@@ -79,16 +79,9 @@ export const projectsPageData: ProjectsPageData = {
         { type: 'site', href: 'https://github.com/zhuozhiyongde/pku-art' },
         { type: 'doc', href: 'https://docs.arthals.ink/docs/pku-art' }
       ]
-    }
+    }*/
   ],
   learnings: [
-    {
-      name: 'CS 213 Learning',
-      description: 'Notes, code and experiences for Introduction to Computer Systems course',
-      links: [
-        { type: 'github', href: 'https://github.com/zhuozhiyongde/Introduction-To-Computer-System-2023Fall-PKU' }
-      ]
-    }
   ],
   others: [],
   sponsorship: {
@@ -99,7 +92,7 @@ export const projectsPageData: ProjectsPageData = {
         label: 'Buy Me a Coffee',
         icon: 'receive-money',
         type: 'link',
-        href: 'https://ko-fi.com/cworld0',
+        href: '',
         target: '_blank'
       },
       {
@@ -113,27 +106,14 @@ export const projectsPageData: ProjectsPageData = {
     ],
     contact: {
       introText: 'Please contact me proactively after sponsorship. My email is',
-      email: 'cworld0@qq.com',
+      email: 'witt498063@gmail.com',
       suffixText: '.'
     },
     thanks: {
-      title: 'Thanks to the following sponsors:',
+      title: 'There\'s no sponsors yet',
       progressMax: 50,
       items: [
-        { name: 'Juyao Huang', amount: 5, date: '2026-01-15' },
-        { name: 'hoochanlon', amount: 5, date: '2025-11-09' },
-        { name: 'Arthals', amount: 50, date: '2025-11-06' },
-        { name: '边缘星2020 (byx2020.com)', amount: 50, date: '2025-11-01' },
-        { name: '小哲', amount: 50, date: '2025-08-19' },
-        { name: 'Open1V', amount: 2, date: '2025-08-14' },
-        { name: 'Luis Xu', amount: 30, date: '2025-08-03' },
-        { name: '顾**', amount: 28, date: '2025-06-23' },
-        { name: 'Hans J.Han', amount: 10, date: '2025-04-04' },
-        { name: '**青', amount: 12, date: '2024-05-21' },
-        { name: 'Anonymous', amount: 20, date: '2022-04-06' },
-        { name: '华雄', amount: 5, date: '2019-12-30' },
-        { name: '◌', amount: 3, date: '2019-12-30' },
-        { name: 'C*a', amount: 2, date: '2019-07-02' }
+        
       ]
     }
   }

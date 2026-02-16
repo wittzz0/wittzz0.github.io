@@ -1,5 +1,5 @@
 ---
-import { Button, Spoiler } from 'astro-pure/user'
+import { Button } from 'astro-pure/user'
 import Substats from '@/components/about/Substats.astro'
 import { aboutPageData } from '@/data/about'
 import PageLayout from '@/layouts/CommonPage.astro'
@@ -12,26 +12,12 @@ import PageLayout from '@/layouts/CommonPage.astro'
       <p>{paragraph}</p>
     ))
   }
-  <p>
-    {aboutPageData.intro.mottoLabel}: {aboutPageData.intro.mottoPrefix} <Spoiler
-      >{aboutPageData.intro.mottoSpoiler}</Spoiler
-    >
-  </p>
   <Button
     title={aboutPageData.intro.sponsorButton.title}
     class='w-fit'
     href={aboutPageData.intro.sponsorButton.href}
     variant={aboutPageData.intro.sponsorButton.variant}
   />
-
-  <h2 id='hobbies'>{aboutPageData.hobbies.title}</h2>
-  <ul>
-    {
-      aboutPageData.hobbies.items.map((item) => (
-        <li>{item}</li>
-      ))
-    }
-  </ul>
 
   <h2 id='social-networks'>{aboutPageData.social.title}</h2>
   <p>{aboutPageData.social.description}</p>
