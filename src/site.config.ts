@@ -7,9 +7,9 @@ export const theme: ThemeUserConfig = {
   /** Will be used in index page & copyright declaration */
   author: 'Witt',
   /** Description metadata for your website. Can be used in page metadata. */
-  description: 'Lorem ipsum',
+  description: '回首飞鸳瓦，却羡井中蛙',
   /** The default favicon for your site which should be a path to an image in the `public/` directory. */
-  favicon: '/favicon/favicon.ico',
+  favicon: '/favicon/favicon.svg',
   /** The default social card image for your site which should be a path to an image in the `public/` directory. */
   socialCard: '/images/social_card.jpg',
   /** Specify the default language for this site. */

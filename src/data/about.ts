@@ -36,9 +36,9 @@ export interface AboutPageData {
 export const aboutPageData: AboutPageData = {
   headings: [{ depth: 2, slug: 'social-networks', text: 'Social Networks' }],
   intro: {
-    role: 'Developer / Designer',
+    role: '学生',
     paragraphs: [
-      'Lorem ipsum dolor sit amet, vidit suscipit at mei. Quem denique mea id. Usu ei regione indoctum dissentiunt, cu meliore fuisset mei, vel quod voluptua ne. Ex dicat impedit mel, at eum oratio possit voluptatum.'
+      '目前是BUAA计算与智能专业本科生。'
     ],
     sponsorButton: {
       title: 'Sponsor Me',
@@ -49,24 +49,12 @@ export const aboutPageData: AboutPageData = {
   social: {
     title: 'Social Networks',
     description:
-      'Lorem ipsum dolor sit amet, vidit suscipit at mei. Quem denique mea id. Usu ei regione indoctum dissentiunt, cu meliore fuisset mei, vel quod voluptua ne.',
+      '',
     stats: [
       {
         platform: 'GitHub',
         icon: 'github',
-        link: 'https://github.com/cworld1'
-      },
-      {
-        platform: 'Telegram',
-        icon: 'telegram',
-        color: '#2ca5e0',
-        link: 'https://t.me/cworld0_cn'
-      },
-      {
-        platform: 'Steam',
-        icon: 'steam',
-        color: '#50769d',
-        link: 'https://steamcommunity.com/id/cworld'
+        link: 'https://github.com/wittzz-crypto'
       }
     ]
   }
