@@ -1,0 +1,62 @@
+---
+title: 'X-VLA论文精读'
+publishDate: 'Feb 22, 2026'
+updatedDate: 'Feb 22, 2026'
+description: '使用Soft Prompt解决机器人异构问题'
+tags:
+  - Embodied AI
+  - Paper Reading
+language: 'Chinese'
+heroImage: { src: './heroimg.jpg', color: '#9698C1' }
+---
+# 概览
+X-VLA是一个VLA模型，以VLM(Florence) + DiT为backbone，参数量0.9B，在多个任务达到SOTA（以pi_0作为baseline）。
+**解决cross-embodiment问题**：在输入端，除一般的多模态输入外，开头添加一个*可学习*token作为soft prompt。针对每种机器人（拥有不同自由度，不同相机位姿），只需使用该机器人的数据，小规模学习一个新的soft prompt，即可传递该机器人构型信息。
+主干网络能学习到**构型无关**的具身知识，
+- 同一模型更容易迁移到不同型号中，实现zero-shot/few-shot；
+- 便于使用多种型号的机器人数据进行更大规模训练。
+# 实验1：不同cross-embodiment方法尝试 (Chap. 3)
+![]()
+提到四种cross-embodiment策略：
+1. 现有（pi_0.5）：在VLA输出末端添加一个投影头，对每个机器构型学习一个投影头
+2. HPT-style projection：在pi_0.5基础上，在token输入端插入一个按不同构型学习的投影头；
+3. Language prompts：在pi_0.5基础上，添加自然语言prompt（hard prompt），让VLM通过推理对齐不同构型（例：“Embodiment: Single Franka, Camera Setup: Left View / Wrist View, Freq: 15Hz”）；
+4. Soft Prompt：在pi_0.5基础上，添加*非自然语言prompt*，对每个构型额外学习prompt。
+由实验 (Figure 4)，最后一种方法（X-VLA）最有效。
+作者的解释：HPT-Style将所有token进行投影，容易改变特征分布，破坏VLM的表示，导致训练不稳定；Language Prompt依赖人工设计，适应性、扩展性差。
+
+此外，在附录中还提到两种失败的尝试：
+1. 加入数据集特定的的LoRA模块来适应不同构型；
+2. 使用MoE扩展模型容量。
+这两种方式均没有得到理想结果。
+# 架构与训练 (Chap. 4)
+在传统VLA架构下，本文整合了以下优化。
+架构：
+- **分流处理图像**。对语言信息 + 主视角视觉信息，使用VLM (Florence-Large) 处理；对其他辅助视角（如腕部视角），使用共享的一个ViT处理。腕部摄像头输入噪声大、变化迅速，但为精细操作提供细节线索，因此单独编码。
+- **本体感知状态Embedding**。将关节位姿、末端执行器位姿通过Time Embedding + 线性层投影，在早期就与其他模态融合。
+微调：
+- **分阶段训练**。第一阶段冻结VLM等主干网络，仅训练Soft Prompt。第二阶段进行端到端全量微调。
+- **学习率控制**。预训练和微调过程中，需要降低Soft Prompt以及VLM模块的学习率，避免灾难性漂移。
+数据：
+- **动作表示对齐**。末端执行器位姿表示：xyz位置，Rotate6D表示旋转，夹爪离散二值状态。
+- **对动作下采样**。用30个点表示未来4秒动作轨迹，避免数据中人类的随机性带来的噪声。
+- **平衡采样**。观察到：稳定训练需要精心设计的数据打乱pipeline。不仅在不同领域之间打乱样本，还在每个领域内部也打乱，缓解分布偏差。
+![[Pasted image 20260222093855.png]]
+该表展示了上面优化的实际效果，PT表示pretraining，AD表示adaptation。
+# 实验2：Scalable实验（Chap. 5.1）
+![[Pasted image 20260222100146.png]]
+在（1）模型大小（2）数据多样性（3）数据量三个维度上都显示出缩放趋势。
+# 实验3：适应性实验（Chap. 5.2）
+- 在Libero, Simpler, RoboTwin-2.0, VLABench, NAVISM上达到SOTA;
+- 本文构建了一个布料折叠数据集Soft-Fold(1.2k)，与进行微调的pi_0-base、从头训练的ACT进行比较，同样表现更佳；
+- **未见任务下的适应性**。在AIRBOT上的一个**未见**真实世界布料抓取**任务**下，LoRA微调1%参数即可达到高成功率，好于pi_0；
+- **未见构型下的适应性**。在Libero-Goal数据集下，用50/10条任务微调，即可适应新新的机器人形态，50/10条的效果相当。![[Pasted image 20260222105200.png]]
+# 实验4：关于Soft Prompt（Chap. 5.3）
+![[Pasted image 20260222184731.png]]
+- Figure 8: 对相似构型对应的Soft Prompt分布有一定重叠；
+- Figure 9: 将UR5对应的Soft Prompt，提供给**相似构型、未见**机器人（WidowX），成功率高于使用随机Prompt，接近经过微调的Soft Prompt。
+该组实验说明Soft Prompt的确学习到机器人构型有关信息，能够实现cross-embodient的zero-shot/few-shot。
+# 局限性 & 未来方向
+- 模型大小/数据量有限。目前高质量数据仍然较少，限制了Scale up。
+- 增强监督信号。本文将时序下的降采样作为一种启发式的抽象动作意图，但**低维动作**的监督信号，在信息含量上较为局限。本文推荐使用三维空间推理线索、物理动力学信息或中间子目标作为监督信息。
+- zero-shot能力仍然有限。探索统一的具身表示，例如通用描述、物理信息先验，减少对任务特定适配的依赖。
