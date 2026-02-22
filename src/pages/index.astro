@@ -14,7 +14,6 @@ import Section from '@/components/home/Section.astro'
 import { heatmapWindowDays, onlineSince } from '@/data/home-statistics'
 import config from '@/site-config'
 
-const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_POSTS = 10
 
 const toDateKey = (date: Date) => {
@@ -23,8 +22,6 @@ const toDateKey = (date: Date) => {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
-
-const toStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
 
 const formatTotalWords = (words: number) => {
   if (words >= 10000) {
@@ -61,15 +58,6 @@ const lastUpdatedText =
   latestDateMs === -Infinity
     ? '--'
     : getFormattedDate(new Date(latestDateMs), { month: 'short', day: 'numeric', year: 'numeric' })
-
-const onlineSinceDate = new Date(`${onlineSince}T00:00:00`)
-const today = toStartOfDay(new Date())
-const daysOnline = Number.isNaN(onlineSinceDate.valueOf())
-  ? 0
-  : Math.max(
-      0,
-      Math.floor((today.valueOf() - toStartOfDay(onlineSinceDate).valueOf()) / DAY_MS)
-    )
 
 const contributionMap = new Map<string, number>()
 
@@ -212,7 +200,7 @@ if (!images[imagePath])
 
       <Section title='Statistics'>
         <StatisticsSection
-          daysOnline={daysOnline}
+          onlineSince={onlineSince}
           lastUpdatedText={lastUpdatedText}
           totalWordsText={totalWordsText}
           totalPosts={totalPosts}
