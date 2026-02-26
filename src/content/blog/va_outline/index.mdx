@@ -1,0 +1,158 @@
+---
+title: 'Video Action Moddel概览'
+publishDate: 'Feb 26, 2026'
+updatedDate: 'Feb 26, 2026'
+description: '对当前VA工作的简单扫过'
+tags:
+  - Embodied AI
+  - Paper Reading
+language: 'Chinese'
+heroImage: { src: './heroimg.jpg', color: '#9698C1' }
+---
+
+# VLA面临的问题
+
+借鉴多模态学习的思路，类似pi_0，OpenVLA的传统VLA模型直接学习**当前观测+语言指令** -> **动作序列**的映射。这种架构在本质上要求神经网络在同一个监督信号下，同时学习异构的知识：视觉场景理解、三维空间几何、环境的物理**演变**规律以及低维的电机控制命令。而目前的VLM虽然也在视频上进行训练，但以对齐视频-文本信息为目标，难以承担backbone的应有作用：
+
+- 泛化性能差，难以处理未见环境/机体；
+- 难以进行复杂物理交互，或物理推理；
+- 难以处理**长**任务，容易累计误差。
+
+![fig1](./assets/Pasted image 20260223200023.png)
+而视频模态的学习**动态**数据，具备对物理因果的一定理解。本文所指的Video Action Model，即使用视频生成模型作为backbone一部分的一类具身模型。
+
+# 演进路线
+
+## 规划-提取动作pipeline
+
+代表：Video Policy (Toyota Research Institute, 2508.00795), mimic-video (MSFT, ETH Zurich, UCB, 2512.15692)
+
+mimic-video: 先用冻结或微调的视频生成DiT，预测**部分去噪**的未来视频，逆动力学DiT (IDM) 以**部分去噪的视频**+proprio为条件，并对视频DiT进行cross-attention，恢复出低层机器人控制指令。
+
+![](./assets/Pasted image 20260223213610.png)
+Video Policy: video U-Net输入多模态信息，每个去噪步抽取隐藏层，输入action U-Net回归为动作
+
+## 多模态联合预测
+
+代表：Unified World Models (Toyota Research Institute, 2504.02792), Cosmos Policy (NVIDIA, 2601.16163), LDA-1B (PKU, 2602.12215v1)
+![fig2](./assets/Pasted image 20260223195546.png)
+为了提高推理速度，同时进一步对齐多模态信号，将动作、视频放在同一个序列中预测。Cosmos Policy提出一种极简的联合预测方案，对视频模型的架构**不做改动**。机器人动作、本体感受状态、累计奖励全部编码为视频模型的潜在帧(Latent Frames)。通过单一的去噪分数目标，让模型同时预测上述模态。
+
+LingBot-VA论文中比较了Co-training（联合预测）与VGM+动作头策略的区别。在Robotwin2.0 Easy中使用Pretrained LingBot-VA / Wan2.2-5B+动作头，经过相同后训练（3k步）的平均成功率92.9% / 80.6%，在更长任务下差距更大。（需要注意这个比较不算公平，两个模型可能注意力机制/观测/训练量不同）
+
+
+## 自回归闭环生成
+
+代表：LingBot-VA (Robbyant, 2601.21998v1), DreamZero (NVIDIA, 2602.15922)
+
+之前的架构都采用**全局同步**去噪，即一次生成完整视频+完整动作。在采取联合预测的基础上，此类模型：1. 自回归架构，每次只生成一小段视频预测+一小段action chunk，并将生成/观测内容追加到condition序列中；2. 用Causal Attention代替原来视频模型中的双向Attention，适应自回归要求。
+
+![fig3](./assets/Pasted image 20260223220545.png)
+以LingBot-VA为例：
+- 输入：视觉用 **causal video** VAE 压缩观测​；动作向量经 MLP 投影成 token embedding，与视觉 token 对齐到同一序列
+- 使用**双流 diffusion transformer**，分别处理视频、动作信息
+- 每层里 video/action 先各自算注意力，再通过跨模态 attention 融合
+- Noisy History Augmentation：训练时视频随机添加噪声，推理时视频只去噪至 $s=0.5$
+
+对于不同时间长度（尤其是长程）的任务，自回归架构具有更强适应性：
+
+1. 将之前的观测视频作为condition，增强记忆，同时避免误差积累。在考验记忆的任务（擦拭盘子6次、搜索两个盒子中的五块）中，LingBot-VA成功率100%，pi_0.5成功率50%
+2. 视频chunk可以利用KV Cache，一定程度上加快了生成速度。
+
+DreamZero中相对公平地比较了AR和双向架构。虽然任务进展相似，但AR生成的运动更平滑，且推理速度提升3-4x。
+
+# 最新模型概览
+
+来自2512~2602的工作
+## LingBot-VA: 推理-执行异步
+
+![fig4](./assets/Pasted image 20260224091716.png)
+
+- Sync Paradigm: 模型生成时机器人闲置，机器人执行时模型闲置；
+- Async Paradigm: 利用视频生成模型**预测未来**的能力，可以用**预测的观测**暂时代替实际观测，让模型始终处于运行状态；
+- Naive Async: 只使用预测观测，容易导致开环漂移，即预测没有修正，误差逐渐累积；
+- FDM-grounded Async: 学习一个FDM模块，预测 $z_{t+1 : t+K}$ 视觉状态作为暂时的Cache，然后主模型预测 $t+K+1:t+2K$ 的视觉和动作。
+![[Pasted image 20260224083140.png]]
+
+相比串行方法，取得相近的成功率，但任务完成速度快了2X。
+## DreamZero: 推理加速、zero-shot、长尾数据
+
+![fig5](./assets/Pasted image 20260224103726.png)
+**模型加速**方面，DreamZero基于Wan2.1-14B自回归DiT构建。为了达到理想控制频率，使用CFG并行计算、NVFP4混合精度量化进行系统加速。为进一步提速，提出DreamZero-Flash噪声调度：
+![fig6](./assets/Pasted image 20260224102427.png)
+训练时强制视频的噪声时间步服从Beta(7,1) 的偏态分布，而动作时间步保持均匀分布，即要求模型从视频生成的早期即重建出动作。总体而言，实现了38倍推理加速，达到7Hz高频闭环控制。
+
+**数据策略**方面，DreamZero强调避免一般数据集中**同一任务重复演示**。在AgiBot G1上收集500小时数据，覆盖了22个现实场景，单集平均长达4.4分钟，并包含42个子任务。
+
+DreamZero展现出更强的**zero-shot/few-shot**能力。在**没有动作标签**的**12分钟**人类视频下训练（损失函数只保留关于视频生成的部分），即可将未见任务成功率提升42%；使用新机器人**随意操作** (Play data) 的视频训练，即可适应新机体。
+
+## Cosmos policy: 极简统一架构
+
+以Wan2.1作为backbone，但同时将Proprio, Action chunk, Value等额外模态均作为latent frames，插入原视频序列中。
+
+在训练时同时学三类目标：Policy ( $p(a,s′,V(s′)∣s)$ ) , World model ( $p(s′,V(s′)∣s,a)$ ) , Value function ( $p(V(s′)\mid s, a, s′)$ )，对不同目标不改动网络，只改动训练数据、损失函数等。对奖励信号的预测让模型具有一定规划能力，弥补视频生成模型的不足。
+
+## LDA-1B: VLM+DINO Backbone，异构数据
+
+![fig7](./assets/Pasted image 20260225154842.png)
+和其他VA不同，**不使用VGM**为Backbone，意在避免低效的像素级计算，同时又可以使用多样异构的数据。
+
+- 输入：观测、语言、时间步、Task Embedding (Forward Dynamics, Inverse Dynamics, Policy, Visual Planning共四种)；
+- 视觉信息使用DINOv3压缩，Action Chunk随机初始化，在一个从头训练的MM DiT中去噪，输出Action Chunk和DINO（代表预测观测的DINO特征）；
+- 预训练：**冻结VLM和DINO**，只训练MM DiT。对于缺失某模态的数据，用可学习的“模态占位符”（Register Tokens）占位。
+- 对于不同的Task Embedding采取不同损失函数。（1）Policy: 输入当前图像语言，仅计算action损失；（2）Forward Dynamics: 输入当前图像+动作，计算DINO损失；（3）Inverse Dynamics: 输入当前图像语言+未来图像，计算action损失；（4）Visual Forecasting: 输入当前图像语言，计算DINO损失。
+
+使用非常多样的第一人称数据，超过30k小时，包含机器人真机（8k），机器人仿真（8k），人类+动作标注（7k），人类无动作标注（10k）。由于应用了Register Tokens和Task Embedding，对于异构数据无需修改网络结构。
+
+## Motus (2512.13030): MoT、光流提取动作
+
+![fig8](./assets/Pasted image 20260224210043.png)
+
+Motus保留三个Transformer: VLM (Qwen2-VL), VGM (Wan 2.2 5B), Action Expert (DiT，从头训练)。三者处理不同输入，但使用特殊的注意力层共享token。借鉴UniDiffuser，给视频/动作分配不同噪声水平和时间步，同一模型可灵活切换VLA/世界模型模式，保持VLM的语义推理能力。
+
+![fig9](./assets/Pasted image 20260224210152.png)
+**训练数据**方面，利用大量无标签数据，提取潜在动作 (Latent Actions) 训练。
+
+1. 输入视频帧，用光流估计算法 (DPFlow) 计算像素运动 (RGB)，再用自编码器 (DC-AE)将光流图压缩 (4个token，每个512维)，最后经过一个轻量编码器转换成14维Latent Action（和动作token形状相同，便于对齐损失函数）。
+2. 训练自编码器：90%数据为人类Ego视频，以重建光流为目标；另有10%含动作标签的机器人轨迹，以Action为目标，使其分布靠近机器人控制信号。
+3. 在上图Stage 2的训练中，将Latent Action作为人类视频的动作标签。
+
+完整训练管线如上图，Stage 1用人类Ego数据+机器人数据无监督训练VGM，Stage 2用人类+机器人数据（带动作标签）有监督端到端训练，Stage 3针对目标机型微调。
+
+相比以VGM为backbone的VA，本文模型更轻量，能够实现更高频推理。
+
+下面提供一个简单的比较。需要注意，不同论文中使用的基准往往不同。
+
+| 模型         | 预训练数据                          | 参数规模 | 表现                                             |
+| ---------- | ------------------------------ | ---- | ---------------------------------------------- |
+| X-VLA      | 290k episodes                  | 0.9B | RoboTwin2.0 Easy 72.9<br>RoboTwin2.0 Rand 72.8 |
+| LingBot-VA | 16k hours                      | 5.3B | RoboTwin2.0 Easy 92.9                          |
+| Motus      | /                              | 8B   | RoboTwin2.0 Easy 88.7<br>RoboTwin2.0 Rand 87.0 |
+| DreamZero  | **0.5k hours**, ~7k episodes   | 14B  | /                                              |
+| LDA-1B     | 30k hours                      | 1B   | /                                              |
+
+## DreamDojo (NVIDIA, 2602.06949): 标准世界模型
+
+虽然不是video action model，但作为同期类似工作简单提及。
+
+和LingBot-VA、DreamZero不同，强调训练一个基础**世界**模型，给定当前画面+Latent Action，预测未来画面。该模型**不接受语言输入**，**不预测动作**，必须配合Policy Model (如GR00T) / Value Model (如DINOv2)才能用于真机。
+
+1. 训练一个VAE，由前后两帧画面，预测出Latent Action。Encoder: 输入两帧画面，输出32维向量(Continuous Latent Action)，代表**相对**动作；Decoder: 输入前一帧+Latent Action，重建后一帧
+2. 以VGM (Cosmos-Predict2.5) 为backbone，将动作信息也放入condition，达到世界模型的效果。（预训练时使用VAE提取的Latent Action，微调时使用真机连续动作转换成的Action）
+3. 训练时，除基础的Flow Matching Loss，还引入时间一致性损失 (Temporal Consistency Loss)，计算模型预测的“速度” $(z^{i+1}-z^{i})$ 与真实视频“速度” $(v^{i+1}-v^{i})$ 的均方误差。
+
+实际使用案例：
+1. Policy Evaluation: 配合Policy Model (输入画面，输出动作)，在虚拟操作视频中评估策略成功率。实验证明机器人在 DreamDojo 里的成功率与真实世界的成功率高度一致（$R^2$ 0.995）。
+2. Model-based Planning: 训练一个Value Model。对不同权重的Policy（或提出多个提案的Policy），先在DreamDojo中模拟执行多种提案，再用Value Model评判得分，选择得分高的执行。
+3. Live Teleoperation: 充当物理模拟器，人类操作员戴上PICO VR 控制器，以人类动作为Condition生成模拟视频。
+
+# Video Action Model的优缺点
+
+缺点：
+- 对System 1，生成速度慢。以DreamZero为例，即使经过量化、部分去噪、其他系统优化，依旧只有7Hz的控制频率，远慢于性能相当的VLA（如X-VLA）。不足以控制人形机器人，也不能反应突然情况。
+- 对System 2，推理能力有缺陷。如果不再使用VLM作为backbone，则语义推理、数学推理等能力难以保证。
+
+优点：
+- 突破训练数据量瓶颈。视频模型本身经过大量数据训练。VA也天然支持多机型、乃至人类视角数据训练，不再依赖单一机型数据。
+- 高泛化性。由于训练数据的多样性，对于新任务/机型，仅使用极少数据即可适应。LingBot-VA和DreamZero均报告了相比pi_0.5更高的样本效率。
+
