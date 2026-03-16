@@ -1,0 +1,540 @@
+---
+title: 'VLA仓库略读'
+publishDate: 'Mar 15, 2026'
+updatedDate: 'Mar 15, 2026'
+description: 'openpi, LeRobot, dreamzero 相关项目结构、数据格式、训推流程'
+tags:
+  - Embodied AI
+language: 'Chinese'
+heroImage: { src: './kizumono1.jpg', color: '#9698C1' }
+---
+
+import { GithubCard } from 'astro-pure/advanced'
+
+<GithubCard repo='Physical-Intelligence/openpi' />
+
+
+<GithubCard repo='huggingface/lerobot' />
+
+
+<GithubCard repo='dreamzero0/dreamzero' />
+
+## 概览
+
+- 项目完整性
+  openpi 和 lerobot 都有较完整的文档、清晰的结构，适合上手和学习。dreamzero 主要服务于实验复现，在实际应用上适配较少，数据处理流程也比较零散。
+- 项目目标
+  openpi 是 VLA 仓库比较标准的形式，意在复现实验、部署真机。
+  lerobot 意在标准化机器人学习的工作流程。
+- 可扩展性
+  lerobot 包含机器人学习的全栈工具，从数据采集、硬件适配到 policy server 部署，接口统一，相对更适合扩展。openpi 和 dreamzero 聚焦于自家模型，相对可扩展性弱。
+
+总体来说，要熟悉 VLA 代码库，建议先看 openpi。
+
+共同点
+- 数据抽象与处理：都用上 LeRobotDataset 数据格式存储数据集，数据处理流程中都有维度对齐、归一化/标准化、字段重命名等
+- 部署方式：policy server 式部署
+
+trade-off
+- LeRobot: 真实机器人链路更完整，接口更标准；抽象层较厚，内容覆盖面过宽。
+- openpi/dreamzero: 贴近原生实现，聚焦 VLA 有关内容；依赖特定模型和配套数据。
+
+## openpi
+### 项目结构
+
+```
+openpi/
+├─ docs/                              # 文档：环境、远程部署、归一化说明
+│
+├─ examples/                          # 用法样例、仿真/真机入口、数据转换
+│
+├─ packages/
+│  └─ openpi-client/                  # 机器人端/评测端用的轻量客户端库
+│
+├─ scripts/ 						  	# 主要命令入口
+│  ├─ compute_norm_stats.py				# 计算 state/action 归一化统计  
+│  ├─ serve_policy.py 					# 启动策略 websocket 服务
+│  ├─ train.py 							# JAX 训练入口
+│  ├─ train_pytorch.py 					# PyTorch 训练入口
+│  └─ docker/ 							# Docker 安装辅助脚本
+│
+├─ src/openpi/                        # 核心库
+│  ├─ models/                         # JAX 模型定义(pi0/pi0-fast/gemma/siglip/tokenizer/lora)
+│  ├─ models_pytorch/                 # PyTorch 模型与 transformers patch
+│  ├─ policies/                       # 不同机器人/环境的输入输出适配层
+│  ├─ serving/                        # websocket policy server
+│  ├─ shared/                         # download / image_tools / normalize 等通用工具
+│  ├─ training/                       # TrainConfig、数据加载、checkpoint、优化器、DROID RLDS loader
+│  └─ transforms.py                   # 通用变换管线
+│
+├─ third_party/                       # 外部依赖/子模块（如 ALOHA、LIBERO）
+├─ README.md
+├─ pyproject.toml
+└─ uv.lock
+```
+
+openpi库包含4层：
+- 模型（`src/openpi/models`、`src/openpi/models_pytorch`）
+- 数据适配与训练（`src/openpi/policies`、`src/openpi/transforms.py`、`src/openpi/training` 等）
+- 服务（`scripts/serve_policy.py` + `src/openpi/serving/websocket_policy_server.py`）
+- 真机/仿真接入（`packages/openpi-client`）
+
+### 数据格式
+
+对规模超大的 DROID 训练，使用 RLDS 格式数据集。其他情况均使用 LeRobot 格式，官方准备了将 DROID 和 LIBERO 转成 LeRobot格式的脚本。
+
+以 `pi05_libero` 为例，LeRobot 数据还会经过以下流水线，由 `LeRobotLiberoDataConfig ` 定义：`raw_data -> repack_transforms（改键名称） -> data_transforms（统一格式） -> Normalize(state/actions) -> model_transforms（模型特定：注入prompt, resize, tokenize, pad）`
+
+对于传入模型的格式，不同配置名称下有所区别，以 DROID 为例：
+```python
+{
+  "observation/exterior_image_1_left": HWC uint8 image,
+  "observation/wrist_image_left": HWC uint8 image,
+  "observation/joint_position": (7,),
+  "observation/gripper_position": (1,),
+  "prompt": "pick up the fork",
+}
+```
+
+### 训练流程
+
+正式训练前，先进行归一化：
+```bash
+uv run scripts/compute_norm_stats.py --config-name pi05_libero
+```
+
+`src/openpi/training/config.py` 中写好了 `pi05_libero`、`pi05_droid`、`pi0_aloha_sim` 等一系列配置，在命令行中直接按配置名启动训练/推理。可使用 JAX 或 PyTorch 作为模型训练和推理框架，其中 PyTorch 是后来加的，覆盖略少于 JAX。下面以 JAX 版本为例：
+
+```bash
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
+uv run scripts/train.py pi05_libero --exp-name=my_experiment --overwrite
+```
+
+- `scripts/compute_norm_stats.py`：扫描数据集，给 `state` 和 `actions` 统计归一化参数并写入 assets
+- `scripts/train.py`：JAX 训练主循环入口
+- `pi05_libero`: config 名称，会在 `config.py` 里检索。在该 config 中，数据会从官方仓库里读取
+- `--exp-name=my_experiment` ：给实验命名
+
+这个命令直接完成读取全部 config ，建立数据处理管线（即从官方仓库数据直接到模型输入数据），加载base checkpoint，训练，保存 checkpoint 的全部流程。
+
+### 部署流程
+
+离线状态的推理：
+```python
+from openpi.training import config as _config
+from openpi.policies import policy_config
+from openpi.shared import download
+
+config = _config.get_config("pi05_droid")
+checkpoint_dir = download.maybe_download("gs://openpi-assets/checkpoints/pi05_droid")
+policy = policy_config.create_trained_policy(config, checkpoint_dir)
+
+example = {
+    "observation/exterior_image_1_left": ...,
+    "observation/wrist_image_left": ...,
+    "observation/joint_position": ...,
+    "observation/gripper_position": ...,
+    "prompt": "pick up the fork",
+}
+action_chunk = policy.infer(example)["actions"]
+```
+ `openpi.policies.policy_config.create_trained_policy(...)`：加载 checkpoint、加载对应的 norm stats，并把输入变换、归一化、模型本体、反归一化、输出变换整条pipeline拼接起来
+
+部署时，openpi将模型推理作为远程 "policy server", 通过 websocket 让机器人端去请求指令。
+
+在GPU上启动 policy server ：
+```bash
+# 用默认环境对应的默认 checkpoint , 直接设定好config
+uv run scripts/serve_policy.py --env DROID
+
+# 或者手工指定 config + checkpoint
+uv run scripts/serve_policy.py policy:checkpoint \
+  --policy.config=pi05_libero \
+  --policy.dir=checkpoints/pi05_libero/my_experiment/20000
+```
+
+以DROID为例，在控制真机的终端配好环境后，运行客户端：
+```bash
+# 在 DROID control laptop 上安装 `openpi-client` 和 `tyro`   
+# 把 `examples/droid/main.py` 复制进 `$DROID_ROOT/scripts`  
+# 改好相机 ID
+python3 scripts/main.py --remote_host=<server_ip> --remote_port=<port> --external_camera="left"
+```
+
+真机控制终端通过 `openpi-client` 里的 `WebsocketClientPolicy(host, port)` 建立 websocket 连接。连接建立成功后，**server 先发一帧 metadata** 给 client；client 把这帧解包后保存在 `_server_metadata`，后续可以通过 `get_server_metadata()` 读取。
+
+然后进入循环：使用 msgpack_numpy 格式传输。真机侧需要动作时，将 ovservation 打包发给 server；服务侧运行推理，将 action 回传。
+## LeRobot
+### 项目结构
+```
+lerobot/
+├─ docs/							# 相关文档
+├─ examples/						# 最小可运行参考
+│  ├─ training/
+│  ├─ tutorial/
+│  │  ├─ act/
+│  │  ├─ diffusion/
+│  │  ├─ pi0/
+│  │  └─ ...
+│  └─ rtc/
+├─ src/lerobot/
+│  ├─ datasets/						# 数据集定义、统计量、训练、采样
+│  ├─ policies/
+│  │  ├─ pi05/						# 模型定义、配置等
+│  │  ├─ xvla/
+│  │  ├─ factory.py					# 实例化 policy 和 processor
+│  │  └─ pretrained.py
+│  ├─ processor/					# 预/后处理 pipeline
+│  ├─ cameras/
+│  ├─ robots/						# cameras/, robots/, teleoperators/为硬件可用接口
+│  ├─ teleoperators/
+│  ├─ async_inference/				# 部署优化层，将模型推理(policy server)和机器人控制(robot client)分离
+│  └─ scripts/						# 统一入口
+│     ├─ lerobot_record.py			# 真机采样/评估
+│     ├─ lerobot_train.py			# 训练
+│     ├─ lerobot_eval.py			# 仿真评估
+│     ├─ lerobot_replay.py			# 回放
+│     ├─ lerobot_dataset_viz.py		# 数据可视化
+│     └─ lerobot_edit_dataset.py	# 
+└─ tests/
+```
+`src/lerobot/datasets/` 是 **数据集核心层**。包括 `lerobot_dataset.py`、`streaming_dataset.py`、`compute_stats.py`、`transforms.py`、`video_utils.py`、`image_writer.py` 等，负责**数据集定义、统计量、视频编码、图像写入、流式训练、采样器**；
+
+### 数据格式
+
+LeRobotDataset v3 将**存储**与**读取**分开处理，低层用大文件高效存储，上层按照 episode / frame 访问。
+
+数据集存储结构：
+```
+my_dataset/
+├── data/
+│   ├── chunk-000/
+│   │   ├── file-000.parquet	# 观测，状态，动作，时间戳，（奖励）
+│   │   ├── file-001.parquet
+│   │   └── ...
+│   ├── chunk-001/
+│   │   └── ...
+│   └── ...
+├── meta/
+│   ├── info.json				# 数据集 config 信息
+│   ├── stats.json				# 归一化参数
+│   ├── tasks.parquet			# 任务信息索引，Task index -> task string
+│   ├── subtasks.parquet		# 子任务标注
+│   └── episodes/
+│       ├── chunk-000/
+│       │   ├── file-000.parquet	# 分集信息，记录了每个 episode 的位置
+│       │   └── ...
+│       └── ...
+└── videos/						# 视觉信息
+    ├── observation.images.top/
+    │   ├── chunk-000/
+    │   │   ├── file-000.mp4
+    │   │   └── ...
+    │   └── ...
+    └── observation.images.wrist/
+        └── ...
+```
+以 step/episode 作为单位采集，以 file 为单位存储。
+
+数据集加载时，使用常规的字典语法即可加载模型无关的数据：
+```python
+from lerobot.datasets.lerobot_dataset import LeRobotDataset, StreamingLeRobotDataset
+
+dataset = LeRobotDataset(
+    repo_id="user/my_dataset",
+    root=None,
+    episodes=None,
+    image_transforms=None,
+    delta_timestamps=None,
+    tolerance_s=...,
+    revision=None,
+    video_backend=None,
+)
+
+sample = dataset[100]	# 按索引读一个样本
+meta = dataset.meta		# 读元数据，包括names, shapes, keys等
+```
+其中，`dataset[i]` 会返回一个 `dict[str, Tensor]`：
+```python
+dict_keys(['observation.images.image', 'observation.images.image2',
+           'observation.state', 'action', 'timestamp', 'frame_index',
+           'episode_index', 'index', 'task_index', 'task'])
+action: torch.Size([7])
+```
+
+要适配具体模型（以 X-VLA 为例），还会经过模型特定的 preprocessor：字段重命名、补 batch 维、文本 token 化、图像归一化+标准化、动作/状态归一化：
+```
+=== Batch keys after preprocess ===
+action								torch.Size([1, 7])
+index								torch.Size([1])
+task_index							torch.Size([1])
+episode_index						torch.Size([1])
+domain_id							torch.Size([1])
+observation.images.image  			torch.Size([1, 3, 256, 256])
+observation.images.image2 			torch.Size([1, 3, 256, 256])
+observation.state         			torch.Size([1, 8])
+observation.language.tokens         torch.Size([1, 50])
+observation.language.attention_mask torch.Size([1, 50])
+```
+
+模型生成的动作是 action chunk (即不是单次动作)，经过逆归一化，并用队列存储，推理时逐个出队。
+
+### 训练流程
+
+`src/lerobot/scripts/lerobot_train.py` 的主函数就是完整训练 pipeline。以 X-VLA 为例，微调时，只需运行：
+```bash
+lerobot-train \
+  --dataset.repo_id=YOUR_DATASET \
+  --policy.path=lerobot/xvla-base \
+  --policy.repo_id=HF_USER/xvla-your-robot \
+  --output_dir=./outputs/xvla_training \
+  --job_name=xvla_training \
+  --policy.device=cuda \
+  --policy.dtype=bfloat16 \
+  --policy.action_mode=auto \
+  --steps=20000 \
+  --policy.freeze_vision_encoder=false \
+  --policy.freeze_language_encoder=false \
+  --policy.train_policy_transformer=true \
+  --policy.train_soft_prompts=true
+```
+
+1. 形成 config:
+   `scripts/lerobot_train.py` ,  `configs/train.py`
+   解析成 `TrainPipelineConfig`
+2. 构造数据: 
+   `datasets/factory.py` ,  `datasets/lerobot_dataset.py`
+   按照配置形成 `LeRobotDataset` 或 `StreamingLeRobotDataset`（数据集较大时）
+3. 构造 policy : 
+   `policies/factory.py` ,  `policies/xvla/configuration_xvla.py` ,  `policies/xvla/modeling_xvla.py`
+   按照数据集格式，确定输入输出格式
+4. 构造 pre/post processors : 
+   `policies/factory.py`,  `policies/xvla/processor_xvla.py`
+   组装成模型特定的数据处理 pipeline
+5. 训练循环：
+   `scripts/lerobot_train.py`
+   常见训练流程，取 batch，数据处理，前向，反向，评估和保存。
+
+一个 checkpoint 结构如下：
+```
+outputs/xvla_training/
+└─ checkpoints/
+   ├─ 005000/
+   │  ├─ pretrained_model/
+   │  │  ├─ config.json
+   │  │  ├─ model.safetensors
+   │  │  ├─ train_config.json
+   │  │  ├─ processor.json
+   │  │  └─ （processor 的状态文件）
+   │  └─ training_state/
+   │     ├─ optimizer_param_groups.json
+   │     ├─ optimizer_state.safetensors
+   │     ├─ rng_state.safetensors
+   │     ├─ scheduler_state.json
+   │     └─ training_step.json
+   └─ last -> 005000
+```
+### 推理流程
+
+#### benchmark rollout
+已有封装好的仿真 rollout 脚本，可以一个 CLI 运行 LIBERO 评估：
+```bash
+lerobot-eval \
+  --policy.path="your-policy-id" \
+  --env.type=libero \
+  --env.task=libero_object \
+  --eval.batch_size=2 \
+  --eval.n_episodes=3
+```
+包括了加载环境、数据预处理、动作出队、控制仿真机器人等，在 `info["final_info"]["is_success"]` 中存储成功信号。
+
+#### 一般真机部署
+
+对于真机部署，使用 `lerobot-record`，可以同时进行机器人控制和数据集录制：
+```bash
+lerobot-record \
+  --robot.type=so100_follower \
+  --robot.port=/dev/ttyACM1 \
+  --robot.cameras="{ up: {type: opencv, index_or_path: /dev/video10, width: 640, height: 480, fps: 30}, side: {type: intelrealsense, serial_number_or_name: 233522074606, width: 640, height: 480, fps: 30}}" \
+  --robot.id=my_awesome_follower_arm \
+  --display_data=false \
+  --dataset.repo_id=${HF_USER}/eval_so100 \
+  --dataset.single_task="Put lego brick into the transparent box" \
+  --dataset.streaming_encoding=true \
+  --dataset.encoder_threads=2 \
+  --policy.path=${HF_USER}/my_policy # checkpoint目录路径
+```
+
+其中 `policy.path` 为 checkpoints 路径。该脚本会解析 checkpoints 中的配置，生成 LeRobotDataset，实例化 policy 和对应的 pre/post processors。
+
+具体推理路径如下：
+```
+--------------- record_loop() data flow --------------------------
+       [ Robot ]
+           V
+     [ robot.get_observation() ] ---> raw_obs
+           V
+     [ robot_observation_processor ] ---> processed_obs
+           V
+     .-----( ACTION LOGIC )------------------.
+     V                                       V
+     [ From Teleoperator ]                   [ From Policy ]
+     |                                       |
+     |  [teleop.get_action] -> raw_action    |   [predict_action]
+     |          |                            |          |
+     |          V                            |          V
+     | [teleop_action_processor]             |          |
+     |          |                            |          |
+     '---> processed_teleop_action           '---> processed_policy_action
+     |                                       |
+     '-------------------------.-------------'
+                               V
+                  [ robot_action_processor ] --> robot_action_to_send
+                               V
+                    [ robot.send_action() ] -- (Robot Executes)
+                               V
+                    ( Save to Dataset )
+                               V
+                  ( Rerun Log / Loop Wait )
+```
+动作执行完后，可以作为一个 episode 录入数据集中
+#### 异步推理部署
+
+类似 openpi ，提供了 `async_inference/policy_server.py` 和 `async_inference/robot_client.py`，可以将推理与执行解耦：
+```bash
+# 在GPU设备上，先开启policy server
+python -m lerobot.async_inference.policy_server \
+  --host=127.0.0.1 \
+  --port=8080
+
+# 在连接机器人本体的终端上启动客户端
+python -m lerobot.async_inference.robot_client \
+  --server_address=127.0.0.1:8080 \
+  --robot.type=so100_follower \
+  --robot.port=/dev/tty.usbmodem585A0076841 \
+  --robot.id=follower_so100 \
+  --robot.cameras="{ ... }" \
+  --task="dummy" \
+  --policy_type=your_policy_type \
+  --pretrained_name_or_path=user/model \
+  --policy_device=mps \
+  --actions_per_chunk=50 \
+  --chunk_size_threshold=0.5
+```
+
+## DreamZero
+
+### 项目结构
+```
+dreamzero/
+├─ socket_test_optimized_AR.py      # 在线部署主入口：分布式 WebSocket 推理服务
+├─ test_client_AR.py                # 最小测试客户端；用于验证服务是否正常响应
+│
+├─ docs/							# 相关文档
+│
+├─ scripts/
+│  ├─ data/							# 数据转换相关脚本
+│  ├─ train/
+│  │  ├─ droid_training_lora.sh     # DROID 的 LoRA 训练脚本
+│  │  ├─ droid_training_full_finetune.sh # DROID 的全量微调脚本
+│  │  ├─ agibot_training.sh         # AgiBot/新机体后训练脚本
+│  │  └─ yam_training.sh            # YAM 后训练脚本
+│  └─ open_loop_yam.py              # 离线 open-loop 检查脚本
+│
+├─ eval_utils/						# 评测入口
+│
+└─ groot/vla/
+	├─ configs/
+    │  ├─ conf.yaml               # Hydra 总配置入口
+	│  ├─ data/dreamzero/         # 数据集与模态配置
+	│  ├─ model/dreamzero/        # 模型、action head、transform 配置
+    │  └─ deepspeed/              # DeepSpeed ZeRO 配置
+    ├─ data/
+    │  ├─ conversion/             # 数据转换相关模块
+    │  ├─ dataset/                # 数据集读取、分片、混合采样
+    │  ├─ schema/                 # 数据/metadata 的结构定义
+    │  └─ transform/              # 视频、状态、动作、语言变换
+    ├─ experiment/
+    │  ├─ experiment.py           # 训练入口
+    │  └─ base.py                 # 建模、建数据、建 trainer、保存 checkpoint 的主流程
+    ├─ model/
+    │  ├─ dreamzero/              # DreamZero 主模型
+    │  └─ n1_5/                   # GR00T N1.5 主模型
+    ├─ common/                    # 通用工具
+    └─ utils/                     # 训练/动作覆盖/计时等辅助工具
+```
+
+### 数据格式
+
+数据集以 LeRobotDataset v2 格式存储，其中 meta 目录下会额外添加 DreamZero 所需的元数据，**其余数据不修改**。
+
+从 DROID 数据到放入模型的数据，经过：
+
+1. 通用：ToTensor，视频裁剪/resize，视频/动作/状态归一化
+2. DreamZero 特定：视频拼接、画布拼接（多视角拼成单画面）、语言指令选择、动作/状态维度对齐、字段转换等
+
+最终格式：
+```python
+{"images":       np.ndarray[1, T, C, 2H, 2W],   		# 3视角拼成单画布
+  "text":         str,                          		# 选中的指令文本
+  "state":        np.ndarray[1, max_state_dim],
+  "state_mask":   np.ndarray[1, max_state_dim],
+  "action":       np.ndarray[T_act, max_action_dim],      # 训练时
+  "action_mask":  np.ndarray[T_act, max_action_dim],}     # 训练时
+```
+
+在线推理时，observation 也会经历类似处理，最终整理成与训练阶段接近的格式。
+
+### 训练流程
+
+准备数据和权重：
+```bash
+hf download GEAR-Dreams/DreamZero-AgiBot --repo-type model --local-dir ./checkpoints/DreamZero-AgiBot # 下载权重
+```
+选择并运行训练脚本：仓库已有DROID LoRA, DROID 全量，Agibot LoRA, YAM LoRA 的训练脚本，也可根据需要编写。
+```bash
+bash scripts/train/droid_training_lora.sh
+# 自动下载Wan和umt5-xxl权重，检查数据目录是否存在，torchrun训练
+# torchrun --nproc_per_node $NUM_GPUS \
+#	--standalone \
+# 	groot/vla/experiment/experiment.py
+# 另有若干命令行参数
+```
+1. torchrun 通过 Hydra 总配置，确定使用哪个数据配置/模型配置、action head、学习率等超参数
+2. `groot/vla/experiment/experiment.py`, `groot/vla/experiment/base.py` 
+   加载权重，实例化模型和数据集，构造训练流程
+3. `groot/vla/experiment/base.py`
+   进入训练流程，保存 checkpoint
+
+### 部署流程
+
+用一个分布式 WebSocket server 运行推理服务，分布式前向，返回动作，保存输入
+```bash
+# 下载 checkpoint
+hf download GEAR-Dreams/DreamZero-DROID --repo-type model --local-dir <path/to/checkpoint>
+
+# 启动推理服务
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run \
+  --standalone --nproc_per_node=2 \
+  socket_test_optimized_AR.py \
+  --port 5000 \
+  --enable-dit-cache \
+  --model-path <path/to/checkpoint>
+```
+仓库提供了一个用于验证的 `test_client_AR.py`，查看服务是否可用：
+```bash
+python test_client_AR.py --port 5000
+```
+
+此外 `run_sim_eval.py` 提供了 DROID 仿真环境，可以连接 policy server 进行仿真测评，评测输出包括动作和视频预测。
+```bash
+python eval_utils/run_sim_eval.py --host <API_HOST> --port <API_PORT>
+```
+
+## 后记
+
+--26/03/16--
+
+这篇文章最初来自组会上的轮巡报告的要求，因此定位比较尴尬：把仓库文档总结一遍显得多余，而详细对比模型架构、数据处理又细节过多，难以顾及全貌。目前仍是不太有价值的笔记形式，如果有心进一步调研，建议阅读原仓库代码。
+
+接下来代码阅读还会更新，会挑一部分模型和数据管线进行更细致对比，也会扩充到其他仓库，保持跟进前沿。
