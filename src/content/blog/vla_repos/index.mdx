@@ -1,7 +1,7 @@
 ---
 title: 'VLA仓库略读'
 publishDate: 'Mar 15, 2026'
-updatedDate: 'Mar 15, 2026'
+updatedDate: 'Mar 17, 2026'
 description: 'openpi, LeRobot, dreamzero 相关项目结构、数据格式、训推流程'
 tags:
   - Embodied AI
@@ -262,7 +262,72 @@ dict_keys(['observation.images.image', 'observation.images.image2',
 action: torch.Size([7])
 ```
 
-要适配具体模型（以 X-VLA 为例），还会经过模型特定的 preprocessor：字段重命名、补 batch 维、文本 token 化、图像归一化+标准化、动作/状态归一化：
+要适配具体模型（以 X-VLA 为例），还会经过模型特定的 preprocessor：字段重命名、补 batch 维、文本 token 化、图像归一化+标准化、动作/状态归一化、表示法等效转换：
+
+```python
+def make\_xvla\_pre\_post\_processors(
+	config: XVLAConfig,
+	dataset\_stats: dict\[str, dict\[str, torch.Tensor]] | None = None,
+) -> tuple\[
+	PolicyProcessorPipeline\[dict\[str, Any], dict\[str, Any]],
+	PolicyProcessorPipeline\[PolicyAction, PolicyAction],
+]:
+	"""
+	Build the LeRobot processor pipelines for XVLA.
+	"""
+
+	features = {\*\*config.input\_features, \*\*config.output\_features}
+	input\_steps = \[
+		# 1) 字段名重命名（不同数据集字段可能不同）
+		RenameObservationsProcessorStep(rename\_map={}),
+		# 2) 补 batch 维：单样本从 (C,H,W) -> (1,C,H,W)
+		AddBatchDimensionProcessorStep(),
+		# 3) 将文本任务指令 token 化，生成 input\_ids / attention 等
+		TokenizerProcessorStep(
+			tokenizer\_name=config.tokenizer\_name,
+			max\_length=config.tokenizer\_max\_length,
+			padding=config.pad\_language\_to,
+			padding\_side=config.tokenizer\_padding\_side,
+		),
+		# 4) 图像值域对齐到 \[0, 1]
+		XVLAImageToFloatProcessorStep(),
+		# 5) 图像标准化到 ImageNet 统计分布
+		XVLAImageNetNormalizeProcessorStep(),
+		# 6) 加 domain\_id（用于多 embodiment/多域提示）
+		XVLAAddDomainIdProcessorStep(),
+		# 7) 把张量放到目标设备（cpu/cuda）
+		DeviceProcessorStep(device=config.device),
+		# 8) 对 state/action 做归一化（若提供了 dataset\_stats）
+		NormalizerProcessorStep(
+			features=features, norm\_map=config.normalization\_mapping, stats=dataset\_stats
+		),
+	]
+	output\_steps = \[
+		# 推理输出逆归一化
+		UnnormalizerProcessorStep(
+			features=config.output\_features,
+			norm\_map=config.normalization\_mapping,
+			stats=dataset\_stats,
+		),
+		# 后处理后统一转到 CPU，方便 env.step(np) 或日志保存
+		DeviceProcessorStep(device="cpu"),
+	]
+	
+	return (
+		PolicyProcessorPipeline\[dict\[str, Any], dict\[str, Any]](
+			steps=input\_steps,
+			name=POLICY\_PREPROCESSOR\_DEFAULT\_NAME,
+		),
+		PolicyProcessorPipeline\[PolicyAction, PolicyAction](
+			steps=output\_steps,
+			name=POLICY\_POSTPROCESSOR\_DEFAULT\_NAME,
+			to\_transition=policy\_action\_to\_transition,
+			to\_output=transition\_to\_policy\_action,
+		),
+	)
+```
+
+
 ```
 === Batch keys after preprocess ===
 action								torch.Size([1, 7])
@@ -278,6 +343,10 @@ observation.language.attention_mask torch.Size([1, 50])
 ```
 
 模型生成的动作是 action chunk (即不是单次动作)，经过逆归一化，并用队列存储，推理时逐个出队。
+
+![vla_imageprocess]((https://github.com/wittzz-crypto/wittzz-crypto.github.io/blob/main/src/assets/vla_imageprocess.png?raw=true))
+
+上图展示了X-VLA的图像处理，先缩放值域到 \[0, 1]，然后 Imagenet 标准化。
 
 ### 训练流程
 
