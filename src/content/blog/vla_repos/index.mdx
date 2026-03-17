@@ -344,7 +344,7 @@ observation.language.attention_mask torch.Size([1, 50])
 
 模型生成的动作是 action chunk (即不是单次动作)，经过逆归一化，并用队列存储，推理时逐个出队。
 
-![vla_imageprocess]((https://github.com/wittzz-crypto/wittzz-crypto.github.io/blob/main/src/assets/vla_imageprocess.png?raw=true))
+![vla_imageprocess](https://github.com/wittzz-crypto/wittzz-crypto.github.io/blob/main/src/assets/vla_imageprocess.png?raw=true)
 
 上图展示了X-VLA的图像处理，先缩放值域到 \[0, 1]，然后 Imagenet 标准化。
 
