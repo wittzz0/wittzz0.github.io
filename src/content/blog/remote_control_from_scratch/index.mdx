@@ -1,0 +1,231 @@
+---
+title: '从零开始，无障碍使用远程服务器'
+publishDate: 'July 18, 2026'
+updatedDate: 'July 18, 2026'
+description: '只要 codex 开始 working，一切都会好起来的'
+tags:
+  - Tutorial
+  - Agent
+heroImage: { src: './vibe_coding_keyboard.jpg', color: '#9698C1' }
+---
+
+
+远程服务器的黑白命令行、原始网络环境、最少的系统依赖往往让 beginner 无所适从。在 codex, claude code 能解决大多数编码问题的当下，如何让 agent 在远程环境里跑起来往往成了最大的问题。本文旨在给出最小操作，从最简陋的界面开始构建一个 agent workflow 舒适的环境。
+
+本文适合完全不了解远程服务器操作，难以向 LLM 描述问题，或不知道该做什么的同学阅读。如果阅读过程中有任何不理解的名词，直接问 LLM 是最好的选择！
+
+## 0. 前置工作
+
+在云平台上启动一台服务器。配置中应开启 SSH。如果可以，建议**先不要挂载GPU**，避免意外被云平台的资源清理策略强制中断。
+
+
+所有远程服务器至少会提供一个直接控制机器的 bash 命令行界面。目前，你只需要在该界面下操作。本文默认服务器为 Ubuntu 系统，对本地操作系统无要求。
+
+确认能连接国内网站： 执行 `ping -c 4 baidu.com` ，如果报错则说明该服务器很可能不能联公网，建议直接放弃，不要进行以下任何步骤。
+
+### apt 与 pip 镜像源
+
+配置 pip 和 apt 的镜像源（此处使用清华源），请参考：[apt 配置](https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu/) 和 [pip 配置](https://mirrors.tuna.tsinghua.edu.cn/help/pypi/)，不同系统版本有所不同。
+
+配置镜像源后，安装必要软件：
+```bash
+sudo apt update
+sudo apt install -y nano tmux curl
+```
+nano 是终端使用的文本编辑器；tmux 实现多终端以及终端任务的后台常驻；curl 是命令行中的浏览器。
+
+> 有可能存在返回 `command 'sudo' not found` 的情况。如果目前用户是`root`，将上面命令里的 sudo 去掉再执行即可，后续出现该报错处理办法相同。
+
+### 服务器 CPU 保活
+
+如果与其他人共用一批 GPU，云平台一般会设置资源清理策略，自动清理长期占用率低的服务器任务。为了保持以下步骤稳定进行，建议先启动一个保活脚本。
+
+安装 stress ，轻量占用 CPU 来保活服务器。
+```bash
+sudo apt update && sudo apt install -y stress 
+```
+
+然后按步骤执行下面命令
+```bash
+# 启动一个 tmux 终端，预期看到一个黑底、绿色底边框的终端出现
+tmux new -s alive
+# stress 占用两个 CPU 核，以维持 CPU 利用率。请根据清理策略调整所占的 CPU 核数量
+stress -c 2
+```
+然后先按 `ctrl + B`，然后单独按 `D`，退出 tmux 终端。此时该任务在后台运行。
+
+退出 tmux 后先不要关闭 bash 命令行，进入下一步骤。
+
+## 1. SSH 远程连接
+
+一般远程服务器支持 SSH 远程连接，从而在本地其他界面（如 VS Code, [Termius](https://termius.com/index.html) )控制服务器。
+
+在服务器端开启 SSH 服务，不同平台有一些差异，建议直接询问 LLM。
+
+然后在本地生成 SSH Key：
+1. 在 bash 或 PowerShell 中执行：`ssh-keygen -t ed25519 -C "你的邮箱@example.com"`
+2. 提示输入密钥的保存路径，或者 Enter 直接使用默认路径。注意密钥应放在 .ssh 文件夹下。
+3. 提示输入密码，直接 Enter 跳过即可
+
+会在前面输入的路径下生成两个文件。公钥名称为`<名字>.pub`，接下来会复制到远程。私钥名称为`<名字>`没有后缀，不要与任何人共享。
+
+要复制生成的公钥到远程，在远程终端执行：
+```bash
+echo "你的公钥内容" >> ~/.ssh/authorized_keys
+```
+
+接下来在本地操作：
+1. 打开 VS Code，安装扩展：`Remote-SSH`。与之关联的`Dev Containers`，`Remote Development`等也一并安装。
+2. VS Code 界面下按下 `Ctrl + Shift + P`，输入 “Open SSH Configuration File”，选择下方与之匹配的命令。选择一个配置文件路径，进入编辑界面。
+3. 添加以下内容并保存：
+```bash
+Host <给服务器取一个名字>
+  HostName <服务器IP>
+  User <服务器上的用户名>
+  Port <远程 SSH 服务对应端口>
+  IdentityFile <本地私钥的路径>
+```
+4. 保存后，`Ctrl + Shift + P` 输入 "Connect Current Window to Host”，连接前述服务器。
+
+在 VS Code 上可以更方便地完成文件编辑、上传文件等操作。
+
+> 下文中需要下载文件，而网络受限时，首先在本地下载，然后拖拽到 VS Code 左侧边栏文件目录上，可以实现文件上传至远程。
+
+## 2. git
+
+为了后续从 GitHub 克隆仓库，在此处设置 github 镜像：
+```bash
+sudo apt update && sudo apt install -y git
+# 设置镜像站
+git config --global url."https://gh-proxy.org/https://".insteadOf https://
+# 设置 user 信息
+git config --global user.name "<名字>"
+git config --global user.email "<你的邮箱@example.com>"
+```
+
+## 3. 安装 codex 及 cc-switch
+
+如果拥有魔法（见第5节），直接安装：
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+否则，首先浏览器访问该网址，将`https://chatgpt.com/codex/install.sh`中的脚本下载到本地，然后将脚本内容复制到远程并执行。
+
+
+
+为了更方便地管理 LLM API key，推荐安装 [cc-switch-cli](https://github.com/SaladDay/cc-switch-cli)，在命令行界面实现 cc-switch 的几乎所有功能。
+
+如果拥有魔法：
+```bash
+curl -fsSL https://github.com/SaladDay/cc-switch-cli/releases/latest/download/install.sh | bash
+```
+否则，先在本地下载[最新版本](https://github.com/SaladDay/cc-switch-cli/releases)，上传到远程后，在压缩包同一目录下执行：
+```bash
+tar -xzf <压缩包名称>
+chmod +x cc-switch
+sudo mv cc-switch /usr/local/bin/
+```
+之后执行`cc-switch`进入 cc-switch TUI 界面。
+
+
+## 4. 安装最新 npm 或 homebrew
+
+**如果仅仅需要安装 codex，该部分不是必要的**。如果需要安装 claude code，或后续需要安装由 npm/homebrew 管理的其他软件，则可以了解该部分。
+
+### 安装 npm
+
+**不要通过 apt 安装**。apt 安装的 npm 版本过老，且会与通过 nvm 安装的版本产生冲突。
+
+```bash
+# 无须魔法地安装 nvm
+curl -o- https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh | bash
+source ~/.bashrc
+
+# 设置 nvm 镜像源
+echo "export NVM_NODEJS_ORG_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/nodejs-release/" >> ~/.bashrc
+source ~/.bashrc
+
+# 安装 npm
+nvm install latest
+nvm use latest
+```
+`npm -v` 和 `node -v` 检查版本，版本过老可能是由于从 apt 安装所致。
+
+### 安装 Homebrew
+
+Homebrew 不能以 root 身份运行。如果目前身份是 root，可以创建一个 dev 账户：
+```bash
+# 创建新用户
+sudo useradd -m -s /bin/bash dev
+# 为新用户设置密码，按提示输入密码
+sudo passwd dev
+# 赋予 sudo 权限
+sudo usermod -aG sudo dev
+```
+
+从清华源下载并设置镜像源：[参考](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew/)
+```bash
+export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+export HOMEBREW_INSTALL_FROM_API=1
+echo 'export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"' >> ~/.bash_profile
+echo 'export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"' >> ~/.bash_profile
+export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
+export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
+pip install -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple some-package
+
+git clone --depth=1 https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/install.git brew-install
+/bin/bash brew-install/install.sh
+rm -rf brew-install
+
+test -d ~/.linuxbrew && eval "$(~/.linuxbrew/bin/brew shellenv)"
+test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+test -r ~/.bash_profile && echo "eval \"\$($(brew --prefix)/bin/brew shellenv)\"" >> ~/.bash_profile
+test -r ~/.profile && echo "eval \"\$($(brew --prefix)/bin/brew shellenv)\"" >> ~/.profile
+test -r ~/.zprofile && echo "eval \"\$($(brew --prefix)/bin/brew shellenv)\"" >> ~/.zprofile
+```
+
+## 5. 界域定锚
+
+在《崩坏：星穹铁道》中，“界域定锚”利用“开拓”命途的力量铺设，能够储存能量。它能连结不同的星球世界，是开拓者日常跑图不可或缺的工具。
+
+设置一个干净的[界域定锚](https://github.com/nelvko/clash-for-linux-install)，可以方便地获取来自匹诺康尼的养成资源：
+```bash
+# 安装依赖
+sudo apt update && sudo apt install -y unzip netcat-openbsd iproute2
+# 安装命令行版本的 clash。 如果已经按照前文设置 github 镜像，下面直接使用 github URL，不用加镜像前缀
+git clone --branch master --depth 1 https://gh-proxy.org/https://github.com/nelvko/clash-for-linux-install.git \
+  && cd clash-for-linux-install \
+  && bash install.sh
+```
+然后按照指示，输入订阅链接，会自动生成 mihomo 配置文件（即确定代理端口、代理规则等的文件）。
+
+
+
+该应用可以在命令行中完成所有所需操作：
+```bash
+clashon # 开启代理，默认端口为 7890
+clashoff # 关闭代理
+clashctl node # 根据引导，切换节点
+clashctl help # 查看其他操作
+```
+
+开启代理后，检查连通性：
+```bash
+curl -v -x socks5://127.0.0.1:7890 https://google.com 
+# 若提示 "Connect to ... "，且返回 HTTP 状态码 200，则连通正常
+curl -x socks5://127.0.0.1:7890 https://ifconfig.me 
+# 若返回代理 IP 的位置则正常
+```
+一种常见的报错是连接成功后返回 `... SSL routines::unexpected eof while reading`，这一般是节点问题，建议切换到更干净节点。
+
+
+
+之后为了在终端常驻使用代理，执行以下命令以添加环境变量：
+```bash
+echo "export http_proxy=127.0.0.1:7890" >> ~/.bashrc
+echo "export https_proxy=127.0.0.1:7890" >> ~/.bashrc
+source ~/.bashrc
+```
+
+
